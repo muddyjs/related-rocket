@@ -33,7 +33,7 @@ class RR_Install
             PRIMARY KEY  (post_id),
             KEY updated_at (updated_at),
             KEY algo_updated (algo_ver, updated_at)
-        ) {$charset_collate};";
+        ) ENGINE=InnoDB {$charset_collate};";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);

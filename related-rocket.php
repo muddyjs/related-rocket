@@ -45,4 +45,63 @@ function rr_related_posts($post_id = null, $n = null)
     return RR_Render::rr_related_posts($post_id, $n);
 }
 
+
+/**
+ * Admin-only DB self-check tool.
+ *
+ * @return array{ok:bool,message:string,data?:array}
+ */
+function rr_db_selfcheck()
+{
+    if (! is_admin() || ! current_user_can('manage_options')) {
+        return array(
+            'ok'      => false,
+            'message' => 'admin_only',
+        );
+    }
+
+    global $wpdb;
+
+    $table = RR_DB::table_name();
+    $like  = $wpdb->esc_like($table);
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $like));
+
+    if ($found !== $table) {
+        return array(
+            'ok'      => false,
+            'message' => 'table_not_found',
+        );
+    }
+
+    $test_post_id = 0;
+    $test_pairs   = array(array(123, 9));
+    $test_hash    = md5('rr_db_selfcheck');
+
+    $write_ok = RR_DB::upsert_related_pairs($test_post_id, $test_pairs, $test_hash);
+    if (false === $write_ok) {
+        return array(
+            'ok'      => false,
+            'message' => 'write_failed',
+        );
+    }
+
+    $row = RR_DB::get_row($test_post_id);
+
+    // Cleanup test row to avoid polluting normal data.
+    $wpdb->delete($table, array('post_id' => $test_post_id), array('%d'));
+
+    if (! is_array($row)) {
+        return array(
+            'ok'      => false,
+            'message' => 'read_failed',
+        );
+    }
+
+    return array(
+        'ok'      => true,
+        'message' => 'ok',
+        'data'    => $row,
+    );
+}
+
 RR_Hooks::init();
