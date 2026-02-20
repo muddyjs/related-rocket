@@ -15,6 +15,8 @@ class RR_Render
             return '';
         }
 
+        RR_Cache::register_n_variant($n);
+
         $theme_hash  = self::theme_hash();
         $runtime_key = $post_id . ':' . $n . ':' . $theme_hash;
 

@@ -10,8 +10,14 @@ class RR_DB
     {
         global $wpdb;
 
-        // Multisite-safe: uses current blog prefix.
         return $wpdb->prefix . 'rr_related';
+    }
+
+    public static function queue_table_name()
+    {
+        global $wpdb;
+
+        return $wpdb->prefix . 'rr_queue';
     }
 
     public static function get_row($post_id)
@@ -60,8 +66,9 @@ class RR_DB
     {
         global $wpdb;
 
-        $table = self::table_name();
-        $json  = wp_json_encode(is_array($pairs) ? $pairs : array());
+        $post_id = (int) $post_id;
+        $table   = self::table_name();
+        $json    = wp_json_encode(is_array($pairs) ? $pairs : array());
         if (! is_string($json)) {
             $json = '[]';
         }
@@ -69,6 +76,14 @@ class RR_DB
         $source_hash_hex = strtolower((string) $source_hash_hex);
         if (! preg_match('/^[a-f0-9]{32}$/', $source_hash_hex)) {
             $source_hash_hex = md5('');
+        }
+
+        // P1: skip no-op writes when source hash has not changed.
+        $current_hex = $wpdb->get_var(
+            $wpdb->prepare("SELECT HEX(source_hash) FROM {$table} WHERE post_id = %d LIMIT 1", $post_id)
+        );
+        if (is_string($current_hex) && strtolower($current_hex) === $source_hash_hex) {
+            return 0;
         }
 
         $sql = $wpdb->prepare(
@@ -79,7 +94,7 @@ class RR_DB
                 algo_ver = VALUES(algo_ver),
                 updated_at = VALUES(updated_at),
                 source_hash = VALUES(source_hash)",
-            (int) $post_id,
+            $post_id,
             $json,
             (int) RR_ALGO_VER,
             current_time('mysql'),
@@ -89,9 +104,55 @@ class RR_DB
         return $wpdb->query($sql);
     }
 
-    /**
-     * Backward-compatible helper for current scaffold callsites.
-     */
+    public static function queue_add($post_id)
+    {
+        global $wpdb;
+
+        $table = self::queue_table_name();
+
+        $sql = $wpdb->prepare(
+            "INSERT IGNORE INTO {$table} (post_id, created_at) VALUES (%d, %s)",
+            (int) $post_id,
+            current_time('mysql')
+        );
+
+        return $wpdb->query($sql);
+    }
+
+    public static function queue_pull_batch($batch_size)
+    {
+        global $wpdb;
+
+        $table      = self::queue_table_name();
+        $batch_size = max(1, (int) $batch_size);
+
+        $sql  = $wpdb->prepare("SELECT post_id FROM {$table} ORDER BY created_at ASC LIMIT %d", $batch_size);
+        $rows = $wpdb->get_col($sql);
+
+        if (! is_array($rows) || empty($rows)) {
+            return array();
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $rows)));
+
+        foreach ($ids as $post_id) {
+            $wpdb->delete($table, array('post_id' => $post_id), array('%d'));
+        }
+
+        return $ids;
+    }
+
+
+    public static function queue_has_items()
+    {
+        global $wpdb;
+
+        $table = self::queue_table_name();
+        $cnt   = $wpdb->get_var("SELECT COUNT(1) FROM {$table}");
+
+        return ((int) $cnt) > 0;
+    }
+
     public static function get_related_ids($post_id)
     {
         $pairs = self::get_related_pairs($post_id);
@@ -104,9 +165,6 @@ class RR_DB
         return $ids;
     }
 
-    /**
-     * Backward-compatible helper for current scaffold callsites.
-     */
     public static function replace_related($post_id, array $pairs, $algo_ver = RR_ALGO_VER)
     {
         unset($algo_ver);

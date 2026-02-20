@@ -21,10 +21,11 @@ class RR_Install
     {
         global $wpdb;
 
-        $table_name      = $wpdb->prefix . 'rr_related';
-        $charset_collate = $wpdb->get_charset_collate();
+        $related_table    = $wpdb->prefix . 'rr_related';
+        $queue_table      = $wpdb->prefix . 'rr_queue';
+        $charset_collate  = $wpdb->get_charset_collate();
 
-        $sql = "CREATE TABLE {$table_name} (
+        $sql_related = "CREATE TABLE {$related_table} (
             post_id BIGINT UNSIGNED NOT NULL,
             related_json TEXT NOT NULL,
             algo_ver SMALLINT UNSIGNED NOT NULL DEFAULT 1,
@@ -35,7 +36,15 @@ class RR_Install
             KEY algo_updated (algo_ver, updated_at)
         ) ENGINE=InnoDB {$charset_collate};";
 
+        $sql_queue = "CREATE TABLE {$queue_table} (
+            post_id BIGINT UNSIGNED NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (post_id),
+            KEY created_at (created_at)
+        ) ENGINE=InnoDB {$charset_collate};";
+
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-        dbDelta($sql);
+        dbDelta($sql_related);
+        dbDelta($sql_queue);
     }
 }

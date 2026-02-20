@@ -30,8 +30,11 @@ class RR_CLI
         $batch   = isset($assoc_args['batch']) ? max(1, absint($assoc_args['batch'])) : 200;
         $enqueue = isset($assoc_args['enqueue']) ? (int) $assoc_args['enqueue'] : 1;
 
-        $offset         = 0;
-        $total_processed = 0;
+        $offset      = 0;
+        $scanned     = 0;
+        $enqueued    = 0;
+        $synced      = 0;
+        $skipped     = 0;
 
         do {
             $sql = $wpdb->prepare(
@@ -49,17 +52,21 @@ class RR_CLI
 
             foreach ($ids as $post_id) {
                 $post_id = (int) $post_id;
+                $scanned++;
 
                 if (1 === $enqueue) {
-                    RR_Async::enqueue_rebuild($post_id);
+                    $ok = RR_Async::enqueue_rebuild($post_id);
+                    if ($ok) {
+                        $enqueued++;
+                    } else {
+                        $skipped++;
+                    }
                 } else {
                     $this->sync_rebuild_one($post_id);
+                    $synced++;
                 }
-
-                $total_processed++;
             }
 
-            // Per-batch cleanup to avoid OOM.
             unset($ids);
             if (function_exists('stop_the_insanity')) {
                 stop_the_insanity();
@@ -69,7 +76,17 @@ class RR_CLI
             $offset += $batch;
         } while (true);
 
-        WP_CLI::success(sprintf('Warmup done. processed=%d batch=%d enqueue=%d', $total_processed, $batch, $enqueue));
+        WP_CLI::success(
+            sprintf(
+                'Warmup done. scanned=%d enqueued=%d synced=%d skipped=%d batch=%d enqueue=%d',
+                $scanned,
+                $enqueued,
+                $synced,
+                $skipped,
+                $batch,
+                $enqueue
+            )
+        );
     }
 
     /**
@@ -105,7 +122,12 @@ class RR_CLI
             return;
         }
 
-        RR_Async::enqueue_rebuild($post_id);
+        $ok = RR_Async::enqueue_rebuild($post_id);
+        if (! $ok) {
+            WP_CLI::warning(sprintf('Rebuild skipped/deduped for post_id=%d', $post_id));
+            return;
+        }
+
         WP_CLI::success(sprintf('Enqueued rebuild for post_id=%d', $post_id));
     }
 
@@ -119,16 +141,6 @@ class RR_CLI
         $pairs = RR_Builder::build($post_id, RR_DEFAULT_N);
         RR_DB::upsert_related_pairs($post_id, $pairs, RR_DB::build_source_hash_hex($post_id));
 
-        RR_Cache::delete(RR_Cache::key_ids($post_id, RR_ALGO_VER, RR_DEFAULT_N));
-        RR_Cache::delete(RR_Cache::key_negative($post_id, RR_ALGO_VER, RR_DEFAULT_N));
-        RR_Cache::delete(
-            RR_Cache::key_html(
-                $post_id,
-                RR_ALGO_VER,
-                RR_DEFAULT_N,
-                RR_TPL_VER,
-                RR_Render::theme_hash()
-            )
-        );
+        RR_Cache::purge_post_caches($post_id);
     }
 }

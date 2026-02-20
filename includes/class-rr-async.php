@@ -6,8 +6,7 @@ if (! defined('ABSPATH')) {
 
 class RR_Async
 {
-    const CRON_HOOK    = 'rr_process_queue';
-    const QUEUE_OPTION = 'rr_async_queue';
+    const CRON_HOOK = 'rr_process_queue';
 
     protected static $seen = array();
 
@@ -21,14 +20,12 @@ class RR_Async
     {
         $post_id = (int) $post_id;
 
-        // 单请求去重。
         if ($post_id <= 0 || isset(self::$seen[$post_id])) {
             return false;
         }
 
         self::$seen[$post_id] = true;
 
-        // 跨请求去重：queued:{post_id}:v{algo_ver}
         $queued_key = RR_Cache::key_queued($post_id, RR_ALGO_VER);
         if (! wp_cache_add($queued_key, 1, RR_Cache::GROUP, 300)) {
             return false;
@@ -44,22 +41,13 @@ class RR_Async
 
     public static function process_cron_queue()
     {
-        $queue = get_option(self::QUEUE_OPTION, array());
-        if (! is_array($queue) || empty($queue)) {
-            return;
-        }
-
-        $batch_size = 20;
-        $batch      = array_slice($queue, 0, $batch_size);
-        $remaining  = array_slice($queue, $batch_size);
-
-        update_option(self::QUEUE_OPTION, array_values($remaining), false);
+        $batch = RR_DB::queue_pull_batch(20);
 
         foreach ($batch as $post_id) {
             self::handle_rebuild_one(array('post_id' => (int) $post_id));
         }
 
-        if (! empty($remaining)) {
+        if (RR_DB::queue_has_items()) {
             self::ensure_cron_scheduled();
         }
     }
@@ -71,47 +59,32 @@ class RR_Async
             return;
         }
 
+        $queued_key = RR_Cache::key_queued($post_id, RR_ALGO_VER);
+
         $post = get_post($post_id);
         if (! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status) {
+            wp_cache_delete($queued_key, RR_Cache::GROUP);
             return;
         }
 
         $pairs = RR_Builder::build($post_id, RR_DEFAULT_N);
         RR_DB::upsert_related_pairs($post_id, $pairs, RR_DB::build_source_hash_hex($post_id));
 
-        RR_Cache::delete(RR_Cache::key_ids($post_id, RR_ALGO_VER, RR_DEFAULT_N));
-        RR_Cache::delete(RR_Cache::key_negative($post_id, RR_ALGO_VER, RR_DEFAULT_N));
-        RR_Cache::delete(
-            RR_Cache::key_html(
-                $post_id,
-                RR_ALGO_VER,
-                RR_DEFAULT_N,
-                RR_TPL_VER,
-                RR_Render::theme_hash()
-            )
-        );
+        RR_Cache::purge_post_caches($post_id);
 
-        // 可选预热：降低冷启动抖动。
         RR_Render::rr_related_posts($post_id, RR_DEFAULT_N);
+
+        // P0: explicit release instead of waiting TTL.
+        wp_cache_delete($queued_key, RR_Cache::GROUP);
     }
 
     protected static function enqueue_to_cron_queue($post_id)
     {
-        $queue = get_option(self::QUEUE_OPTION, array());
-        if (! is_array($queue)) {
-            $queue = array();
-        }
-
-        $post_id = (int) $post_id;
-        if (! in_array($post_id, array_map('intval', $queue), true)) {
-            $queue[] = $post_id;
-        }
-
-        update_option(self::QUEUE_OPTION, array_values($queue), false);
+        $ok = RR_DB::queue_add((int) $post_id);
 
         self::ensure_cron_scheduled();
 
-        return true;
+        return false !== $ok;
     }
 
     protected static function ensure_cron_scheduled()

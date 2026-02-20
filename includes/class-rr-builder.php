@@ -31,7 +31,6 @@ class RR_Builder
 
         $candidate_ids = array();
 
-        // Per-tag candidate collection first.
         foreach ($tag_ids as $tag_id) {
             $ids = get_posts(
                 array(
@@ -57,7 +56,6 @@ class RR_Builder
             }
         }
 
-        // If still short, backfill from categories.
         if (count($candidate_ids) < (int) RR_MAX_CANDIDATES) {
             foreach ($cat_ids as $cat_id) {
                 $ids = get_posts(
@@ -96,7 +94,6 @@ class RR_Builder
             return array();
         }
 
-        // Explicit post_date DESC crop/order for candidate pool.
         $candidate_ids = get_posts(
             array(
                 'post_type'              => 'post',
@@ -124,26 +121,67 @@ class RR_Builder
             $date_rank[(int) $cid] = (int) $idx;
         }
 
+        // P1: batch term fetch to avoid per-candidate term API overhead.
+        $term_rows = wp_get_object_terms(
+            $candidate_ids,
+            array('post_tag', 'category'),
+            array(
+                'fields' => 'all_with_object_id',
+            )
+        );
+
+        $map_tags = array();
+        $map_cats = array();
+
+        if (is_array($term_rows)) {
+            foreach ($term_rows as $term_row) {
+                if (! isset($term_row->object_id, $term_row->term_id, $term_row->taxonomy)) {
+                    continue;
+                }
+
+                $oid = (int) $term_row->object_id;
+                $tid = (int) $term_row->term_id;
+
+                if ('post_tag' === $term_row->taxonomy) {
+                    if (! isset($map_tags[$oid])) {
+                        $map_tags[$oid] = array();
+                    }
+                    $map_tags[$oid][] = $tid;
+                } elseif ('category' === $term_row->taxonomy) {
+                    if (! isset($map_cats[$oid])) {
+                        $map_cats[$oid] = array();
+                    }
+                    $map_cats[$oid][] = $tid;
+                }
+            }
+        }
+
+        $tag_lookup = array_fill_keys($tag_ids, 1);
+        $cat_lookup = array_fill_keys($cat_ids, 1);
+
         $scored = array();
 
         foreach ($candidate_ids as $candidate_id) {
             $candidate_id = (int) $candidate_id;
 
-            $candidate_tags = wp_get_post_terms($candidate_id, 'post_tag', array('fields' => 'ids'));
-            $candidate_cats = wp_get_post_terms($candidate_id, 'category', array('fields' => 'ids'));
+            $cand_tags = isset($map_tags[$candidate_id]) ? array_values(array_unique(array_map('intval', $map_tags[$candidate_id]))) : array();
+            $cand_cats = isset($map_cats[$candidate_id]) ? array_values(array_unique(array_map('intval', $map_cats[$candidate_id]))) : array();
 
-            if (! is_array($candidate_tags)) {
-                $candidate_tags = array();
-            }
-            if (! is_array($candidate_cats)) {
-                $candidate_cats = array();
+            $common_tag_count = 0;
+            foreach ($cand_tags as $tag_id) {
+                if (isset($tag_lookup[$tag_id])) {
+                    $common_tag_count++;
+                }
             }
 
-            $common_tag_count = count(array_intersect($tag_ids, array_map('intval', $candidate_tags)));
-            $common_cat_count = count(array_intersect($cat_ids, array_map('intval', $candidate_cats)));
+            $common_cat_count = 0;
+            foreach ($cand_cats as $cat_id) {
+                if (isset($cat_lookup[$cat_id])) {
+                    $common_cat_count++;
+                }
+            }
 
             $score = ($common_tag_count * (int) RR_W_TAG) + ($common_cat_count * (int) RR_W_CAT);
-
             if ($score <= 0) {
                 continue;
             }
@@ -163,7 +201,7 @@ class RR_Builder
             $scored,
             static function ($a, $b) {
                 if ($a['score'] === $b['score']) {
-                    return $a['rank'] <=> $b['rank']; // tie-break: post_date DESC (earlier rank is newer)
+                    return $a['rank'] <=> $b['rank'];
                 }
 
                 return $b['score'] <=> $a['score'];

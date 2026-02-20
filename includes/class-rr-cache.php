@@ -7,6 +7,7 @@ if (! defined('ABSPATH')) {
 class RR_Cache
 {
     const GROUP = 'rr';
+    const N_OPTION = 'rr_n_variants';
 
     protected static $runtime_cache = array();
 
@@ -99,5 +100,44 @@ class RR_Cache
         $neg_key = self::key_negative((int) $post_id, (int) RR_ALGO_VER, (int) $n);
 
         return (bool) self::get($neg_key);
+    }
+
+    public static function register_n_variant($n)
+    {
+        $n = max(1, (int) $n);
+
+        $list = get_option(self::N_OPTION, array());
+        if (! is_array($list)) {
+            $list = array();
+        }
+
+        $list[] = $n;
+        $list = array_values(array_unique(array_map('intval', $list)));
+        sort($list);
+
+        update_option(self::N_OPTION, $list, false);
+    }
+
+    public static function known_n_variants()
+    {
+        $list = get_option(self::N_OPTION, array((int) RR_DEFAULT_N));
+        if (! is_array($list) || empty($list)) {
+            return array((int) RR_DEFAULT_N);
+        }
+
+        return array_values(array_unique(array_map('intval', $list)));
+    }
+
+    public static function purge_post_caches($post_id)
+    {
+        $post_id    = (int) $post_id;
+        $n_variants = self::known_n_variants();
+        $theme_hash = RR_Render::theme_hash();
+
+        foreach ($n_variants as $n) {
+            self::delete(self::key_ids($post_id, RR_ALGO_VER, $n));
+            self::delete(self::key_negative($post_id, RR_ALGO_VER, $n));
+            self::delete(self::key_html($post_id, RR_ALGO_VER, $n, RR_TPL_VER, $theme_hash));
+        }
     }
 }
