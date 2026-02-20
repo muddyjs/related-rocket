@@ -17,47 +17,62 @@ class RR_Render
 
         $theme_hash  = self::theme_hash();
         $runtime_key = $post_id . ':' . $n . ':' . $theme_hash;
-        $runtime     = RR_Cache::get_runtime($runtime_key);
+
+        // 1) runtime cache
+        $runtime = RR_Cache::get_runtime($runtime_key);
         if (null !== $runtime) {
             return (string) $runtime;
         }
 
+        // 2) HTML cache
         $html_key = RR_Cache::key_html($post_id, RR_ALGO_VER, $n, RR_TPL_VER, $theme_hash);
         $html     = RR_Cache::get($html_key);
-        if (is_string($html) && '' !== $html) {
+        if (false !== $html) {
+            $html = (string) $html;
             RR_Cache::set_runtime($runtime_key, $html);
             return $html;
         }
 
+        // 3) negative cache
         if (RR_Cache::is_negative($post_id, $n)) {
             RR_Cache::set_runtime($runtime_key, '');
             return '';
         }
 
-        $ids_key = RR_Cache::key_ids($post_id, RR_ALGO_VER, $n);
-        $ids     = RR_Cache::get($ids_key);
+        // 4) IDs cache
+        $ids_key   = RR_Cache::key_ids($post_id, RR_ALGO_VER, $n);
+        $cached_ids = RR_Cache::get($ids_key);
+        $ids       = array();
 
-        if (! is_array($ids) || empty($ids)) {
-            $ids = RR_DB::get_related_ids($post_id);
-            if (empty($ids)) {
-                RR_Cache::set_negative($post_id, $n);
-
-                if (RR_Cache::acquire_lock($post_id, $n)) {
-                    RR_Async::enqueue_rebuild($post_id);
+        if (is_array($cached_ids) && ! empty($cached_ids)) {
+            $ids = array_map('intval', $cached_ids);
+        } else {
+            // 5) DB fallback
+            $pairs = RR_DB::get_related_pairs($post_id);
+            foreach ($pairs as $pair) {
+                if (is_array($pair) && isset($pair[0])) {
+                    $ids[] = (int) $pair[0];
                 }
+            }
 
+            $ids = array_values(array_filter($ids));
+
+            if (empty($ids)) {
+                // 6) NEG + enqueue
+                RR_Cache::set_negative($post_id, $n);
+                RR_Async::enqueue_rebuild($post_id);
                 RR_Cache::set_runtime($runtime_key, '');
                 return '';
             }
 
+            // IDs came from DB; write IDs cache.
             RR_Cache::set($ids_key, $ids, RR_Cache::ttl_with_jitter((int) RR_TTL_IDS));
         }
 
         $html = self::render_related_list(array_slice($ids, 0, $n));
 
-        if ('' !== $html && RR_Cache::acquire_lock($post_id, $n)) {
-            RR_Cache::set($html_key, $html, RR_Cache::ttl_with_jitter((int) RR_TTL_HTML));
-        }
+        // render done, write HTML cache.
+        RR_Cache::set($html_key, $html, RR_Cache::ttl_with_jitter((int) RR_TTL_HTML));
         RR_Cache::set_runtime($runtime_key, $html);
 
         return $html;
@@ -86,10 +101,10 @@ class RR_Render
             return '';
         }
 
-        $posts       = $query->posts;
-        $template    = self::locate_template();
-        $thumb_size  = apply_filters('rr_thumb_size', 'medium');
-        $tag_limit   = (int) apply_filters('rr_tag_display_limit', 3);
+        $posts      = $query->posts;
+        $template   = self::locate_template();
+        $thumb_size = apply_filters('rr_thumb_size', 'medium');
+        $tag_limit  = 3;
 
         ob_start();
         include $template;
@@ -113,6 +128,7 @@ class RR_Render
         }
 
         $template_path = RR_PLUGIN_DIR . 'templates/related-list.php';
+
         return $template_path;
     }
 
