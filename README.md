@@ -69,6 +69,25 @@
 
 - `templates/related-list.php`
 
+
+### 3.4 替换旧的“相关文章”代码
+
+在单篇文章模板（如 `single.php`）中，删除旧的随机 `WP_Query` 相关文章代码，改为：
+
+```php
+<?php
+if (function_exists('rr_related_posts')) {
+    echo rr_related_posts(get_the_ID(), 15);
+}
+?>
+```
+
+也可使用 shortcode：
+
+```text
+[rr_related n="15"]
+```
+
 ---
 
 ## 4. 验收清单（建议）

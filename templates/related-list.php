@@ -12,31 +12,25 @@ if (! defined('ABSPATH')) {
     exit;
 }
 ?>
-<div class="rr-related-list">
-    <ul class="rr-related-items">
+<section class="w-full px-4 md:px-10 mt-16 lg:mt-24 mb-20 rr-related-list">
+    <h2 class="text-2xl font-bold text-center text-gray-900 mb-12"><?php echo esc_html__('More like this', 'related-rocket'); ?></h2>
+    <div class="columns-2 sm:columns-3 md:columns-4 xl:columns-5 gap-4 lg:gap-6 rr-related-items">
         <?php foreach ($posts as $item_post) : ?>
             <?php
             $permalink = get_permalink($item_post);
             $title     = get_the_title($item_post);
-            $tags      = get_the_terms($item_post, 'post_tag');
-            if (! is_array($tags)) {
-                $tags = array();
-            }
-            $tags = array_slice($tags, 0, max(0, (int) $tag_limit));
             ?>
-            <li class="rr-related-item">
-                <a class="rr-related-thumb" href="<?php echo esc_url($permalink); ?>">
-                    <?php echo get_the_post_thumbnail($item_post, $thumb_size, array('loading' => 'lazy', 'decoding' => 'async')); ?>
-                </a>
-                <a class="rr-related-title" href="<?php echo esc_url($permalink); ?>"><?php echo esc_html($title); ?></a>
-                <?php if (! empty($tags)) : ?>
-                    <div class="rr-related-tags">
-                        <?php foreach ($tags as $tag) : ?>
-                            <span class="rr-related-tag"><?php echo esc_html($tag->name); ?></span>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </li>
+            <article class="masonry-item group break-inside-avoid mb-4 lg:mb-6 rr-related-item">
+                <div class="relative overflow-hidden rounded-md bg-gray-100 shadow-sm transition-all duration-300">
+                    <a href="<?php echo esc_url($permalink); ?>" class="block rr-related-thumb">
+                        <?php echo get_the_post_thumbnail($item_post, 'large', array('class' => 'w-full h-auto block', 'loading' => 'lazy', 'decoding' => 'async')); ?>
+                    </a>
+                    <a href="<?php echo esc_url($permalink); ?>" class="absolute inset-0 z-10" aria-label="<?php echo esc_attr($title); ?>"></a>
+                </div>
+                <div class="mt-2 px-1">
+                    <h3 class="text-xs font-bold text-gray-800 line-clamp-1 rr-related-title"><?php echo esc_html($title); ?></h3>
+                </div>
+            </article>
         <?php endforeach; ?>
-    </ul>
-</div>
+    </div>
+</section>
