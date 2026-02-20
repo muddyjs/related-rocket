@@ -25,6 +25,11 @@ define('RR_TTL_HTML', 86400);
 define('RR_TTL_NEG', 300);
 define('RR_TTL_LOCK', 60);
 define('RR_JITTER_RATIO', 0.1);
+define('RR_W_TAG', 5);
+define('RR_W_CAT', 2);
+define('RR_PER_TAG_FETCH', 200);
+define('RR_PER_CAT_FETCH', 200);
+define('RR_MAX_CANDIDATES', 1200);
 
 require_once RR_PLUGIN_DIR . 'includes/class-rr-install.php';
 require_once RR_PLUGIN_DIR . 'includes/class-rr-cache.php';
