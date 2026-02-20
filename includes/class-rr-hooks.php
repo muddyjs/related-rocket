@@ -63,7 +63,11 @@ class RR_Hooks
             return;
         }
 
-        if ('publish' === $new_status || 'publish' === $old_status) {
+        if ('publish' !== $new_status) {
+            return;
+        }
+
+        if ($old_status !== $new_status || 'publish' === $old_status) {
             RR_Async::enqueue_rebuild((int) $post->ID);
         }
     }
