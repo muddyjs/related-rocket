@@ -20,6 +20,11 @@ define('RR_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RR_ALGO_VER', 1);
 define('RR_TPL_VER', 1);
 define('RR_DEFAULT_N', 30);
+define('RR_TTL_IDS', 86400);
+define('RR_TTL_HTML', 86400);
+define('RR_TTL_NEG', 300);
+define('RR_TTL_LOCK', 60);
+define('RR_JITTER_RATIO', 0.1);
 
 require_once RR_PLUGIN_DIR . 'includes/class-rr-install.php';
 require_once RR_PLUGIN_DIR . 'includes/class-rr-cache.php';
@@ -42,7 +47,19 @@ register_deactivation_hook(RR_PLUGIN_FILE, array('RR_Install', 'deactivate'));
  */
 function rr_related_posts($post_id = null, $n = null)
 {
-    return RR_Render::rr_related_posts($post_id, $n);
+    static $memo = array();
+
+    $pid = null === $post_id ? (int) get_the_ID() : (int) $post_id;
+    $num = null === $n ? (int) RR_DEFAULT_N : absint($n);
+    $key = $pid . ':' . $num;
+
+    if (isset($memo[$key])) {
+        return $memo[$key];
+    }
+
+    $memo[$key] = RR_Render::rr_related_posts($pid, $num);
+
+    return $memo[$key];
 }
 
 

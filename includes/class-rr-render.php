@@ -29,8 +29,7 @@ class RR_Render
             return $html;
         }
 
-        $neg_key = RR_Cache::key_negative($post_id, RR_ALGO_VER, $n);
-        if (RR_Cache::get($neg_key)) {
+        if (RR_Cache::is_negative($post_id, $n)) {
             RR_Cache::set_runtime($runtime_key, '');
             return '';
         }
@@ -41,18 +40,24 @@ class RR_Render
         if (! is_array($ids) || empty($ids)) {
             $ids = RR_DB::get_related_ids($post_id);
             if (empty($ids)) {
-                RR_Cache::set($neg_key, 1, 300);
-                RR_Async::enqueue_rebuild($post_id);
+                RR_Cache::set_negative($post_id, $n);
+
+                if (RR_Cache::acquire_lock($post_id, $n)) {
+                    RR_Async::enqueue_rebuild($post_id);
+                }
+
                 RR_Cache::set_runtime($runtime_key, '');
                 return '';
             }
 
-            RR_Cache::set($ids_key, $ids, 86400);
+            RR_Cache::set($ids_key, $ids, RR_Cache::ttl_with_jitter((int) RR_TTL_IDS));
         }
 
         $html = self::render_related_list(array_slice($ids, 0, $n));
 
-        RR_Cache::set($html_key, $html, 86400);
+        if ('' !== $html && RR_Cache::acquire_lock($post_id, $n)) {
+            RR_Cache::set($html_key, $html, RR_Cache::ttl_with_jitter((int) RR_TTL_HTML));
+        }
         RR_Cache::set_runtime($runtime_key, $html);
 
         return $html;
