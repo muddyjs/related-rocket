@@ -38,6 +38,7 @@ require_once RR_PLUGIN_DIR . 'includes/class-rr-hooks.php';
 require_once RR_PLUGIN_DIR . 'includes/class-rr-builder.php';
 require_once RR_PLUGIN_DIR . 'includes/class-rr-render.php';
 require_once RR_PLUGIN_DIR . 'includes/class-rr-async.php';
+require_once RR_PLUGIN_DIR . 'includes/class-rr-cli.php';
 
 register_activation_hook(RR_PLUGIN_FILE, array('RR_Install', 'activate'));
 register_deactivation_hook(RR_PLUGIN_FILE, array('RR_Install', 'deactivate'));
@@ -124,6 +125,11 @@ function rr_db_selfcheck()
         'message' => 'ok',
         'data'    => $row,
     );
+}
+
+
+if (defined('WP_CLI') && WP_CLI) {
+    WP_CLI::add_command('rr', 'RR_CLI');
 }
 
 RR_Hooks::init();
